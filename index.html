@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ระบบวิทยุสื่อสารเสียงตามสาย V5.5</title>
+  <script src="https://unpkg.com"></script>
+  <style>
+    * { box-sizing: border-box; touch-action: manipulation; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; margin: 0; padding: 15px; background-color: #121417; color: #e9ecef; }
+    .card { max-width: 440px; margin: 15px auto; background: #1e2227; padding: 22px; border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.6); border: 1px solid #2d3239; }
+    h2 { color: #f59f00; margin-top: 0; font-size: 21px; }
+    #inapp-alert { display: none; background: #e03131; color: #fff; padding: 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; text-align: left; margin-bottom: 15px; }
+    input { width: 100%; padding: 14px; font-size: 16px; text-align: center; margin-bottom: 12px; border-radius: 10px; border: 1px solid #373a40; background: #141517; color: #fff; outline: none; }
+    button { display: block; width: 100%; padding: 13px; font-size: 15px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; margin-top: 10px; text-align: center; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .btn-primary { background: #1971c2; color: #fff; }
+    .btn-success { background: #2f9e44; color: #fff; }
+    .btn-secondary { background: #495057; color: #ced4da; }
+    .btn-danger { background: #e03131; color: #fff; }
+
+    .display-box { background: #141517; border: 1px solid #2c2e33; border-radius: 14px; padding: 14px; margin: 14px 0; }
+    .status-text { font-size: 16px; font-weight: bold; margin-top: 6px; }
+    
+    .ptt-wrapper { margin: 18px 0; }
+    .btn-ptt { 
+      width: 175px; 
+      height: 175px; 
+      margin: 0 auto; 
+      border-radius: 50%; 
+      background: radial-gradient(circle, #e03131 0%, #96121a 100%); 
+      color: #fff; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      box-shadow: 0 8px 25px rgba(224, 49, 49, 0.45); 
+      border: 6px solid #491215; 
+      user-select: none; 
+      -webkit-user-select: none; 
+      cursor: pointer; 
+      transition: all 0.15s ease;
+    }
+    
+    .btn-ptt.transmitting { 
+      transform: scale(1.04); 
+      background: radial-gradient(circle, #ff4d4d 0%, #c92a2a 100%); 
+      box-shadow: 0 0 45px rgba(255, 77, 77, 0.95); 
+      border-color: #ffa8a8; 
+    }
+
+    .cpn-box { background: #0b0e14; border: 1px solid #384252; border-radius: 10px; padding: 12px; margin-top: 10px; text-align: left; font-size: 14px; color: #a3be8c; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>📻 ระบบวิทยุสื่อสารเสียงตามสาย (V5.5)</h2>
+
+  <!-- 1. เมนูหลัก -->
+  <div id="view-menu">
+    <button class="btn-primary" onclick="switchView('view-receiver')">💻 เครื่องรับ (คอมพิวเตอร์ต่อลำโพง)</button>
+    <button class="btn-success" onclick="switchView('view-login')">📱 เครื่องส่ง ว. (มือถือเจ้าหน้าที่)</button>
+  </div>
+
+  <!-- 2. เครื่องรับเสียง (ทำงานสแตนด์บาย 24 ชม.) -->
+  <div id="view-receiver" style="display: none;">
+    <div class="display-box">
+      <div style="color: #868e96; font-size: 14px;">สถานะสถานีรับสัญญาณกลาง</div>
+      <div id="receiver-status" class="status-text" style="color: #51cf66;">🟢 ระบบเฝ้าฟังออนไลน์ 24 ชั่วโมง</div>
+    </div>
+    <button class="btn-secondary" onclick="switchView('view-menu')">ย้อนกลับ</button>
+  </div>
+
+  <!-- 3. หน้าเข้าสู่ระบบ (ล็อกอินปุ๊บ สั่งเปิดไฟตู้ปั๊บ) -->
+  <div id="view-login" style="display: none;">
+    <h3 style="margin-top: 0;">🔐 ระบุตัวตนผู้ส่งเสียง</h3>
+    <input type="text" id="ipt-user" placeholder="Username (เช่น admin1)" autocomplete="off">
+    <input type="password" id="ipt-pass" placeholder="Password (เช่น 1234)">
+    <button id="btn-login-submit" class="btn-primary" onclick="handleLogin()">เข้าสู่ระบบ</button>
+    <button class="btn-secondary" onclick="switchView('view-menu')">ย้อนกลับ</button>
+    <div id="login-feedback" style="margin-top: 12px; font-size: 14px;"></div>
+  </div>
+
+  <!-- 4. หน้าแอดมินส่งเสียง (PTT มือถือ) -->
+  <div id="view-transmitter" style="display: none;">
+    <div class="display-box">
+      <div style="font-size: 14px; color: #adb5bd;">ผู้ควบคุม: <b id="tx-admin-name" style="color: #4dabf7;">-</b></div>
+      <div id="tx-status" class="status-text" style="color: #ffd43b;">กำลังเตรียมไมโครโฟน...</div>
+      
+      <!-- กล่องแสดงสถานะยืนยันจากตู้ฮาร์ดแวร์ -->
+      <div class="cpn-box" id="cpn-live-status">
+        📡 ระบบอัตโนมัติ: สั่งงานกล่อง CPN เปิดไฟ ON เรียบร้อยแล้ว
+      </div>
+    </div>
+
+    <!-- ปุ่ม PTT วงกลม -->
+    <div class="ptt-wrapper">
+      <div class="btn-ptt" id="ptt-button">
+        <span style="font-size: 38px;">🎙️</span>
+        <span id="ptt-label-title" style="font-size: 20px; font-weight: bold; margin-top: 5px;">PTT</span>
+        <span id="ptt-label-desc" style="font-size: 12px; opacity: 0.8; margin-top: 3px;">กดค้างเพื่อพูด</span>
+      </div>
+    </div>
+
+    <!-- ปุ่มล็อกเอาต์หลักที่จะตัดการทำงานของตู้ทั้งหมดให้กลับไปเป็น OFF -->
+    <button class="btn-danger" id="btn-logout" onclick="handleLogout()">🚪 ออกจากระบบ (สั่งปิดตู้ไฟ OFF อัตโนมัติ)</button>
+  </div>
+</div>
+
+<script>
+  // ⚠️ สำคัญมาก: เปลี่ยนลิงก์นี้ให้เป็น Web App URL เวอร์ชันล่าสุดที่คุณกด Deploy จาก Google Apps Script ครับ
+  const SCRIPT_API_URL = "https://google.com";
+  const FIXED_STATION_ID = "makhamkhu-rx-station";
+
+  let loggedInUser = "";
+  let audioCtx = null;
+  let audioDestNode = null;
+  let rawMicStream = null;
+  let micGainNode = null;
+  let peerInstance = null;
+  let isPressed = false;
+
+  function switchView(viewId) {
+    document.getElementById('view-menu').style.display = 'none';
+    document.getElementById('view-receiver').style.display = 'none';
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-transmitter').style.display = 'none';
+    document.getElementById(viewId).style.display = 'block';
+  }
+
+  // 1. จัดการล็อกอินเชิงระบบ (ผูกคำสั่งสั่งเปิด ON อัตโนมัติในฐานข้อมูลและตู้)
+  async function handleLogin() {
+    const u = document.getElementById('ipt-user').value.trim();
+    const p = document.getElementById('ipt-pass').value.trim();
+    const fb = document.getElementById('login-feedback');
+    const btn = document.getElementById('btn-login-submit');
+
+    if (!u || !p) {
+      fb.style.color = "#ff8787";
+      fb.innerText = "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน";
+      return;
+    }
+
+    fb.style.color = "#adb5bd";
+    fb.innerText = "กำลังเชื่อมต่อระบบและส่งคำสั่งเปิดตู้ไฟ CPN (ON)...";
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(SCRIPT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "login", username: u, password: p })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        loggedInUser = data.username;
+        document.getElementById('tx-admin-name').innerText = loggedInUser;
+        switchView('view-transmitter');
+
+        const liveBox = document.getElementById('cpn-live-status');
+        liveBox.innerText = "✅ ระบบทำงานอัตโนมัติ ➔ เปิดตู้ส่งสัญญาณสำเร็จ";
+        liveBox.style.color = "#a3be8c";
+
+        setupMicrophone();
+      } else {
+        fb.style.color = "#ff8787";
+        fb.innerText = "❌ " + (data.message || "ข้อมูลสิทธิ์ไม่ถูกต้อง");
+      }
+    } catch (err) {
+      fb.style.color = "#ff8787";
+      fb.innerText = "❌ เกิดข้อผิดพลาดทางเครือข่าย: " + err;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // 2. จัดการออกจากระบบ (ผูกคำสั่งส่งข้อมูลเพื่อสั่งสวิตช์ตู้ฮาร์ดแวร์เป็น OFF ทันที)
+  async function handleLogout() {
+    if (!confirm("ต้องการออกจากระบบและสั่งสวิตช์ปิดตู้ไฟ (OFF) ทันทีใช่หรือไม่?")) return;
+    
+    const btn = document.getElementById('btn-logout');
+    btn.disabled = true;
+    btn.innerText = "กำลังตัดสัญญาณและสั่งปิดตู้ CPN...";
+
+    try {
+      await fetch(SCRIPT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "logout", username: loggedInUser })
+      });
+    } catch (e) {
+      console.warn("การเชื่อมต่อหลุด แต่ส่งคำสั่งตัดระบบแล้ว: ", e);
+    }
+    
+    // เคลียร์ประวัติการเชื่อมต่อและกลับหน้าแรก
+    location.reload();
+  }
+
+  // ================= 3. ส่วนควบคุมระบบเสียงและไมโครโฟน PTT =================
+  function getAudioContext() {
+    if (!audioCtx) {
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioCtxClass({ latencyHint: 'interactive' });
+      audioDestNode = audioCtx.createMediaStreamDestination();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  async function setupMicrophone() {
+    const st = document.getElementById('tx-status');
+    try {
+      getAudioContext();
+      rawMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, latency: 0 }
+      });
+
+      const micSource = audioCtx.createMediaStreamSource(rawMicStream);
+      micGainNode = audioCtx.createGain();
+      micGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      micSource.connect(micGainNode);
+      micGainNode.connect(audioDestNode);
+
+      st.innerText = "กำลังเชื่อมสัญญาณ ว. ดิจิทัล...";
+      peerInstance = new Peer();
+
+      peerInstance.on('open', () => {
+        peerInstance.call(FIXED_STATION_ID, audioDestNode.stream);
+        st.innerText = "🟢 พร้อมส่ง ว. (กดปุ่มค้างเพื่อพูด)";
+        st.style.color = "#51cf66";
+        bindPTTEvents();
+      });
+
+      peerInstance.on('error', () => {
+        st.innerText = "⚠️ ระบบออนไลน์ แต่ไม่พบแม่ข่ายภาครับ 24 ชม.";
