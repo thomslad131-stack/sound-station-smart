@@ -80,7 +80,7 @@
     <button class="btn-success" onclick="switchView('view-login')">📱 เครื่องส่ง ว. (มือถือเจ้าหน้าที่)</button>
   </div>
 
-  <!-- 2. เครื่องรับเสียง (PC) -->
+  <!-- 2. เครื่องรับเสียง (PC ปลายทาง) -->
   <div id="view-receiver" style="display: none;">
     <div class="display-box">
       <div style="color: #868e96; font-size: 14px;">สถานะสถานีกลางปลายทาง</div>
@@ -89,6 +89,7 @@
     </div>
     
     <button id="btn-turn-on-rx" class="btn-success" onclick="initReceiver()">🎧 เปิดสถานีรับสัญญาณ (เฝ้าฟัง 24 ชม.)</button>
+    <button id="btn-reconnect-rx" class="btn-teal" style="display: none;" onclick="initReceiver()">🔄 เชื่อมต่อสถานีใหม่อีกครั้ง</button>
     <button class="btn-secondary" onclick="switchView('view-menu')">ย้อนกลับ</button>
     
     <audio id="audio-player" autoplay playsinline></audio>
@@ -98,7 +99,7 @@
     </video>
   </div>
 
-  <!-- 3. หน้าเข้าสู่ระบบ -->
+  <!-- 3. หน้าเข้าสู่ระบบ (มือถือ) -->
   <div id="view-login" style="display: none;">
     <h3 style="margin-top: 0;">🔐 ระบุตัวตนผู้ส่งเสียง</h3>
     <input type="text" id="ipt-user" placeholder="Username (เช่น admin1)" autocomplete="off">
@@ -119,7 +120,7 @@
       </div>
     </div>
 
-    <!-- ปุ่ม PTT วงกลม -->
+    <!-- ปุ่ม PTT สำหรับกดพูด -->
     <div class="ptt-wrapper">
       <div class="btn-ptt" id="ptt-button">
         <span style="font-size: 38px;">🎙️</span>
@@ -149,8 +150,11 @@
 </div>
 
 <script>
+  // URL ของ Google Apps Script ที่ Deploy จาก Google Sheet
   const SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbwKUegou4G9HkjAQ33zSWs5fjhpbWbd1OiWy6-mGmldKKWcjqrcaEkiDPm33MQ5g0js/exec";
-  const FIXED_STATION_ID = "makhamkhu-test-station-v4";
+  
+  // ไอดีสถานีใหม่เฉพาะกิจ (ป้องกันการชนกับระบบอื่น 100%)
+  const FIXED_STATION_ID = "makhamkhu-smart-station-2026";
 
   let peerInstance = null;
   let rawMicStream = null;
@@ -161,6 +165,17 @@
   let micGainNode = null;
   let isPressed = false;
   let wakeLock = null;
+
+  // ล้างการเชื่อมต่อทันทีเมื่อปิดหน้าต่างเว็บ ป้องกัน session ค้าง
+  window.addEventListener('beforeunload', cleanupPeer);
+  window.addEventListener('pagehide', cleanupPeer);
+
+  function cleanupPeer() {
+    if (peerInstance) {
+      peerInstance.destroy();
+      peerInstance = null;
+    }
+  }
 
   window.addEventListener('DOMContentLoaded', () => {
     const ua = navigator.userAgent || navigator.vendor || window.opera;
@@ -175,7 +190,7 @@
     });
   }
 
-  // ================= 1. เครื่องรับเสียง (PC) =================
+  // ================= 1. เครื่องรับเสียง (PC ปลายทาง) =================
   async function keepScreenAwake() {
     const keepVideo = document.getElementById('keep-awake-video');
     if (keepVideo) keepVideo.play().catch(e => console.log("Wake video active"));
@@ -192,8 +207,10 @@
   function initReceiver() {
     const status = document.getElementById('receiver-status');
     const btn = document.getElementById('btn-turn-on-rx');
+    const btnReconnect = document.getElementById('btn-reconnect-rx');
 
     btn.style.display = 'none';
+    btnReconnect.style.display = 'none';
     status.innerText = "กำลังเชื่อมต่อสถานีเครือข่าย V4...";
     status.style.color = "#ffd43b";
 
@@ -206,6 +223,7 @@
       if (clockEl) clockEl.innerText = `🕒 เวลา: ${timeStr} | ออนไลน์ 24 ชม.`;
     }, 1000);
 
+    cleanupPeer();
     peerInstance = new Peer(FIXED_STATION_ID);
 
     peerInstance.on('open', () => {
@@ -231,12 +249,17 @@
     });
 
     peerInstance.on('error', (err) => {
-      status.innerText = "⚠️ แจ้งเตือน: " + err.type;
+      if (err.type === 'unavailable-id') {
+        status.innerText = "⚠️ ไอดีสถานีกำลังถูกใช้งาน (กรุณารอ 20 วินาทีแล้วกดเชื่อมต่อใหม่)";
+      } else {
+        status.innerText = "⚠️ แจ้งเตือน: " + err.type;
+      }
       status.style.color = "#fa5252";
+      btnReconnect.style.display = 'block';
     });
   }
 
-  // ================= 2. เข้าสู่ระบบ & สลับโซน =================
+  // ================= 2. เข้าสู่ระบบ & สลับโซนฮาร์ดแวร์ =================
   async function handleLogin() {
     const u = document.getElementById('ipt-user').value.trim();
     const p = document.getElementById('ipt-pass').value.trim();
@@ -327,6 +350,10 @@
     btnLogout.innerText = "⏳ กำลังสั่งตัดไฟกล่อง CPN (OFF)...";
 
     try {
+      cleanupPeer();
+      if (rawMicStream) {
+        rawMicStream.getTracks().forEach(track => track.stop());
+      }
       await fetch(SCRIPT_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
@@ -366,6 +393,7 @@
       micGainNode.connect(audioDestNode);
 
       st.innerText = "กำลังจับคู่สถานี V4...";
+      cleanupPeer();
       peerInstance = new Peer();
 
       peerInstance.on('open', () => {
